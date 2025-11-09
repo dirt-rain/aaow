@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "name": "@aaow/types",
+  "description": "Shared types accross all aaow packages",
+  "version": "0.0.0",
+  "scripts": {
+    "build": "rimraf dist && tsc && clean-empty-js \"dist/**/*.js\" \"dist/**/*.d.ts\" && npx clean-empty-directory \"dist\" && package-json-minifier && cpy README.md dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dirt-rain/aaow.git",
+    "directory": "packages/@aaow/types"
+  },
+  "license": "WTFPL",
+  "devDependencies": {
+    "clean-empty-directory": "^2.0.1",
+    "clean-empty-js": "^2.0.3",
+    "cpy-cli": "^6.0.0",
+    "package.json-minifier": "^0.0.4",
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3"
+  }
+}
