@@ -1,12 +1,29 @@
-import type { CoreTool } from "ai";
-import type { z } from "zod";
+/**
+ * Tool parameter schema definition
+ * Compatible with Vercel AI SDK's tool schema format
+ */
+export interface ToolParameters {
+  type: "object";
+  properties: Record<string, unknown>;
+  required?: string[];
+  additionalProperties?: boolean;
+  [key: string]: unknown;
+}
 
 /**
  * Tool definition compatible with Vercel AI SDK
- * This is a re-export of CoreTool for convenience and consistency
+ * Designed to work with CoreTool from Vercel AI SDK
  */
-export type ToolDefinition<TParameters extends z.ZodType = z.ZodType> =
-  CoreTool<TParameters>;
+export interface ToolDefinition<TParameters = ToolParameters> {
+  /** Tool description for the LLM */
+  description?: string;
+
+  /** Parameter schema (JSON Schema or Zod schema) */
+  parameters: TParameters;
+
+  /** Tool execution function */
+  execute?: (args: unknown) => Promise<unknown> | unknown;
+}
 
 /**
  * Tool registry - manages tools by name
