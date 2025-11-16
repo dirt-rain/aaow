@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    // vscode
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // project
+    "noEmit": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "lib": ["ES2020"],
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}
