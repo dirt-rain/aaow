@@ -3,13 +3,32 @@
   "name": "@aaow/core",
   "description": "aaow core runtime engine",
   "version": "0.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "rimraf dist && tsc -p tsconfig.build.json && clean-empty-js \"dist/**/*.js\" \"dist/**/*.d.ts\" && npx clean-empty-directory \"dist\" && package-json-minifier && cpy README.md dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/dirt-rain/aaow.git",
     "directory": "packages/@aaow/core"
   },
-  "license": "WTFPL"
+  "license": "WTFPL",
+  "dependencies": {
+    "@aaow/types": "file:../types/dist",
+    "ai": "^4.0.42",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "clean-empty-directory": "^2.0.1",
+    "clean-empty-js": "^2.0.3",
+    "cpy-cli": "^6.0.0",
+    "package.json-minifier": "^0.0.4",
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  }
 }
