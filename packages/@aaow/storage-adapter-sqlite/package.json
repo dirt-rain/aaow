@@ -1,0 +1,34 @@
+{
+  "private": true,
+  "name": "@aaow/storage-adapter-sqlite",
+  "description": "SQLite storage adapter for aaow workflows",
+  "version": "0.0.0",
+  "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.build.json && clean-empty-js \"dist/**/*.js\" \"dist/**/*.d.ts\" && npx clean-empty-directory \"dist\" && package-json-minifier && cpy README.md dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dirt-rain/aaow.git",
+    "directory": "packages/@aaow/storage-adapter-sqlite"
+  },
+  "license": "WTFPL",
+  "dependencies": {
+    "@aaow/types": "file:../types/dist",
+    "@prisma/client": "^6.1.0"
+  },
+  "devDependencies": {
+    "clean-empty-directory": "^2.0.1",
+    "clean-empty-js": "^2.0.3",
+    "cpy-cli": "^6.0.0",
+    "package.json-minifier": "^0.0.4",
+    "prisma": "^6.1.0",
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  }
+}
