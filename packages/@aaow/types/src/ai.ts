@@ -1,4 +1,14 @@
 /**
+ * Minimal AbortSignal interface for tool execution cancellation
+ */
+export interface AbortSignal {
+  readonly aborted: boolean;
+  readonly reason?: unknown;
+  addEventListener(type: "abort", listener: () => void): void;
+  removeEventListener(type: "abort", listener: () => void): void;
+}
+
+/**
  * Tool call options passed to the execute function
  */
 export interface ToolCallOptions {

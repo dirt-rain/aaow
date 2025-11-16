@@ -37,41 +37,60 @@ Complex LLM workflows with provider flexibility, hierarchical budget control, an
 
 ## Workflow Programming Paradigms
 
-`aaow` supports multiple programming paradigms for workflow composition, allowing you to leverage structural/procedural, object-oriented/functional, and reactive programming patterns.
+`aaow` supports multiple programming paradigms by treating workflows, subgraphs, and nodes as reusable, composable components that can be used in different execution contexts.
 
-### Groups (Subgraphs as Nodes)
+### Core Concepts
 
-- **Subgraph Nodes**: Groups encapsulate nodes and edges with dedicated `start` and `end` nodes
-- **Controlled Flow**: Arbitrary jumps (goto/jump) are restricted to maintain structure
-- **Group Restart**: Restart entire groups for loop-like behavior (similar to `while`/`loop` + `continue`)
+**Nodes as Functions**: Every node (including subgraphs) acts like a function with typed inputs and outputs. Nodes execute automatically when their dependencies (previous nodes) complete, supporting fork/join patterns for parallel execution.
 
-### Call Workflow
+**Groups (Subgraphs)**: Groups encapsulate nodes and edges with designated entry and exit points, acting as composite nodes in larger workflows. They can be restarted for loop-like behavior and provide scope for context and budget management.
 
-Call subgroups or external workflows as reusable components:
+### Reusable Workflows
 
-- **Budget-aware Execution**: Initially runs within the caller's budget
-- **Approval Flow**: Requests user approval for workflow calls
-- **Budget Restoration**: Upon approval, restores consumed budget and executes in a new budget group
+**Call Workflow Node**: Invoke subgraphs or external workflows as reusable components within your workflow graph. When a workflow call is made:
+- Executes within the caller's budget initially
+- If LLM nodes need more budget, they can request approval via tool calls (human-in-the-loop)
+- Upon approval, continues execution in a new independent budget pool
+- Can be called from multiple locations, promoting DRY principles
 
 ### Hierarchical Context System
 
-- **Per-Group Context**: Each group can define its own context (data or subgraph/workflow references)
-- **Context Inheritance**: Child groups can access parent (and ancestor) contexts
-- **Type-based Resolution**: Similar to React's Context API - contexts are differentiated by type
+Each group can define its own context that child groups inherit:
 
-### Functional and Reactive Support
+- **String-based Keys**: Contexts are identified by string keys (e.g., `"api-client"`, `"user-settings"`)
+- **Context Inheritance**: Child groups can access contexts from parent and ancestor groups
+- **Flexible Content**: Contexts can hold data, subgraph references, or stream operators
+- **Scoped Access**: Nodes can reference context items to call them as functions, coroutines, or stream operators
 
-Workflows and subgraphs can operate in multiple modes:
+### Execution Modes
 
-- **Function Mode**: Simple input → output transformation (pure functions)
-- **Stream Mode**: React to data sources or other stream nodes
-- **Coroutine Support**: Generator-based workflows that can be used as streams
+Workflows and nodes support different execution patterns:
 
-This design enables:
-- **Structural/Procedural**: Sequential execution with groups and controlled flow
-- **Object-Oriented**: Encapsulation via groups with context inheritance
-- **Functional**: Pure transformation workflows
-- **Reactive**: Stream-based data processing with coroutines
+#### 1. Graph Execution (Default)
+Standard workflow execution following edges between nodes. Nodes execute when all predecessor nodes complete (automatic fork/join synchronization).
+
+#### 2. Stream Processing
+Stream nodes consume and transform data reactively:
+- Subscribe to outputs from other stream nodes
+- Apply reactive operators (map, filter, merge, etc.)
+- External data sources (APIs, WebSocket) can be integrated via custom stream source functions
+- Lifecycle tied to workflow execution (starts/ends with workflow)
+
+#### 3. Generator-based Workflows (Coroutines)
+Workflow execution can be defined as generator functions:
+- The generator represents a workflow run instance
+- Values yielded by the generator act as a stream
+- Can call nodes from the workflow graph and parent context as functions, coroutines, or stream operators
+- Enables imperative-style workflow definitions with async iteration
+
+### Programming Paradigm Support
+
+This design enables multiple programming styles:
+
+- **Structural/Procedural**: Sequential and parallel execution with groups and controlled flow
+- **Object-Oriented**: Encapsulation via groups, context inheritance for shared state/behavior
+- **Functional**: Compose workflows from reusable node functions with typed input/output
+- **Reactive**: Stream-based data processing with operators and generator-based coroutines
 
 ## Packages
 

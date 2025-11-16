@@ -4,7 +4,7 @@
   "description": "Shared types accross all aaow packages",
   "version": "0.0.0",
   "scripts": {
-    "build": "rimraf dist && tsc && clean-empty-js \"dist/**/*.js\" \"dist/**/*.d.ts\" && npx clean-empty-directory \"dist\" && package-json-minifier && cpy README.md dist"
+    "build": "rimraf dist && tsc -p tsconfig.build.json && clean-empty-js \"dist/**/*.js\" \"dist/**/*.d.ts\" && npx clean-empty-directory \"dist\" && package-json-minifier && cpy README.md dist"
   },
   "repository": {
     "type": "git",

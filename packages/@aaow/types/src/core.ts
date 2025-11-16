@@ -28,6 +28,17 @@ export interface WorkflowNodeBase {
   outputType: WorkflowNodeMessageType;
 }
 
+// Context system for hierarchical data/node sharing
+export interface WorkflowContext {
+  items: Record<string, WorkflowContextItem>;
+}
+
+export type WorkflowContextItem =
+  | { type: "data"; value: unknown }
+  | { type: "nodeRef"; nodeId: string }
+  | { type: "workflowRef"; workflowId: string }
+  | { type: "streamOperator"; operator: WorkflowStreamOperator };
+
 // Group node executions hierarchically, can be stopped, like try/catch with abort/restart
 export interface WorkflowNodeGroup extends WorkflowNodeBase {
   type: "group";
@@ -36,6 +47,7 @@ export interface WorkflowNodeGroup extends WorkflowNodeBase {
   edges: WorkflowEdge[];
   entryPoint: string;
   exitPoint: string;
+  context?: WorkflowContext;
 }
 
 export interface WorkflowNodeLLM extends WorkflowNodeBase {
@@ -67,6 +79,36 @@ export type WorkflowTool = WorkflowToolIntrinsic | WorkflowToolCustom;
 export interface WorkflowNodeTransform extends WorkflowNodeBase {
   type: "transform";
   fn: WorkflowNodeTransformFn;
+}
+
+// Call external workflow or subgraph as a reusable node
+export interface WorkflowNodeCallWorkflow extends WorkflowNodeBase {
+  type: "callWorkflow";
+  // Reference to workflow (context key or workflow ID)
+  workflowRef: string;
+  // Optional input/output mapping
+  inputMapping?: WorkflowNodeTransformFn;
+  outputMapping?: WorkflowNodeTransformFn;
+  // Whether to request user approval before execution
+  requiresApproval?: boolean;
+}
+
+// Stream node for reactive data processing
+export interface WorkflowNodeStream extends WorkflowNodeBase {
+  type: "stream";
+  // Stream source (subscribe to other streams or external sources)
+  source: WorkflowStreamSource;
+  // Reactive operators to apply
+  operators?: WorkflowStreamOperator[];
+}
+
+// Generator-based workflow (coroutine)
+export interface WorkflowNodeGenerator extends WorkflowNodeBase {
+  type: "generator";
+  // Generator function name (resolved at runtime)
+  generatorFn: string;
+  // Context keys accessible to the generator
+  contextAccess?: string[];
 }
 
 type WorkflowNodeTransformFn =
@@ -120,7 +162,32 @@ interface WorkflowNodeTransformFnConst {
   value: unknown;
 }
 
-export type WorkflowNode = WorkflowNodeGroup | WorkflowNodeLLM;
+// Stream source types
+export type WorkflowStreamSource =
+  | { type: "node"; nodeId: string }
+  | { type: "external"; sourceFn: string }
+  | { type: "merge"; nodeIds: string[] };
+
+// Reactive stream operators
+export type WorkflowStreamOperator =
+  | { type: "map"; fn: WorkflowNodeTransformFn }
+  | { type: "filter"; fn: WorkflowNodeTransformFn }
+  | { type: "merge"; streams: string[] }
+  | { type: "debounce"; ms: number }
+  | { type: "throttle"; ms: number }
+  | { type: "take"; count: number }
+  | { type: "skip"; count: number }
+  | { type: "scan"; fn: WorkflowNodeTransformFn; initialValue?: unknown }
+  | { type: "distinct" }
+  | { type: "distinctUntilChanged" };
+
+export type WorkflowNode =
+  | WorkflowNodeGroup
+  | WorkflowNodeLLM
+  | WorkflowNodeTransform
+  | WorkflowNodeCallWorkflow
+  | WorkflowNodeStream
+  | WorkflowNodeGenerator;
 
 export interface WorkflowEdge {
   from: string;
