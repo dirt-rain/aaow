@@ -1,28 +1,43 @@
 /**
- * Tool parameter schema definition
- * Compatible with Vercel AI SDK's tool schema format
+ * Tool call options passed to the execute function
  */
-export interface ToolParameters {
-  type: "object";
-  properties: Record<string, unknown>;
-  required?: string[];
-  additionalProperties?: boolean;
-  [key: string]: unknown;
+export interface ToolCallOptions {
+  /** Unique identifier for this tool call */
+  toolCallId: string;
+
+  /** Messages context at the time of the tool call */
+  messages?: unknown[];
+
+  /** Abort signal to cancel the tool execution */
+  abortSignal?: AbortSignal;
 }
 
 /**
  * Tool definition compatible with Vercel AI SDK
- * Designed to work with CoreTool from Vercel AI SDK
+ * Matches the structure of CoreTool from 'ai' package
  */
-export interface ToolDefinition<TParameters = ToolParameters> {
-  /** Tool description for the LLM */
+export interface ToolDefinition<TInput = unknown, TResult = unknown> {
+  /**
+   * Information about the purpose of the tool including details
+   * on how and when it can be used by the model
+   */
   description?: string;
 
-  /** Parameter schema (JSON Schema or Zod schema) */
-  parameters: TParameters;
+  /**
+   * Input schema that the tool expects
+   * Can be a Zod schema or JSON schema
+   * The language model will use this to generate and validate input
+   */
+  inputSchema: TInput;
 
-  /** Tool execution function */
-  execute?: (args: unknown) => Promise<unknown> | unknown;
+  /**
+   * Async function called with arguments from the tool call
+   * Returns a result or results iterable
+   */
+  execute?: (
+    input: TInput extends { parse: (input: unknown) => infer R } ? R : unknown,
+    options: ToolCallOptions
+  ) => Promise<TResult> | TResult | AsyncIterable<TResult>;
 }
 
 /**
