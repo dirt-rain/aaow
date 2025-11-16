@@ -2,9 +2,19 @@ import type { Workflow } from "./core";
 import type { ExecutionContext, LLMExecutionResult, ToolCall } from "./ai";
 
 /**
- * Session status for workflow execution tracking
+ * Workflow run status
+ *
+ * Note: A "Session" represents a single workflow execution (workflow run).
+ * The terms are used interchangeably in the codebase.
  */
-export type SessionStatus = "running" | "paused" | "completed" | "failed";
+export type SessionStatus =
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "waiting_for_human_review"
+  | "waiting_for_budget_approval"
+  | "waiting_for_workflow_approval";
 
 /**
  * Budget pool status
@@ -12,13 +22,84 @@ export type SessionStatus = "running" | "paused" | "completed" | "failed";
 export type BudgetPoolStatus = "active" | "exhausted" | "suspended";
 
 /**
- * Session information for workflow execution
+ * Approval request type
  */
-export interface Session {
-  /** Unique session identifier */
+export type ApprovalType =
+  | "human_review"
+  | "budget_increase"
+  | "workflow_call";
+
+/**
+ * Approval status
+ */
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
+
+/**
+ * Approval request for human-in-the-loop workflows
+ *
+ * Tracks requests for human review, budget approval, or workflow call approval
+ */
+export interface ApprovalRequest {
+  /** Unique approval request identifier */
   id: string;
 
-  /** Reference to workflow being executed */
+  /** Session this approval belongs to */
+  sessionId: string;
+
+  /** Node that triggered the approval request */
+  nodeId: string;
+
+  /** Type of approval requested */
+  type: ApprovalType;
+
+  /** Current approval status */
+  status: ApprovalStatus;
+
+  /** Request context and details */
+  context: {
+    /** Description of what needs approval */
+    description?: string;
+
+    /** For budget approval: requested budget amount */
+    requestedBudget?: number;
+
+    /** For budget approval: current budget usage */
+    currentUsage?: number;
+
+    /** For workflow call: workflow to be called */
+    workflowRef?: string;
+
+    /** For human review: LLM output to review */
+    llmOutput?: unknown;
+
+    /** Additional context data */
+    metadata?: Record<string, unknown>;
+  };
+
+  /** Request creation timestamp */
+  createdAt: Date;
+
+  /** Approval/rejection timestamp */
+  resolvedAt?: Date;
+
+  /** User who approved/rejected */
+  resolvedBy?: string;
+
+  /** Rejection reason or approval notes */
+  resolutionNotes?: string;
+}
+
+/**
+ * Session (Workflow Run)
+ *
+ * Represents a single execution instance of a workflow.
+ * "Session" and "Workflow Run" are used interchangeably.
+ */
+export interface Session {
+  /** Unique session identifier (also the workflow run ID) */
+  id: string;
+
+  /** Reference to workflow definition being executed */
   workflowId: string;
 
   /** Current execution status */
@@ -30,7 +111,7 @@ export interface Session {
   /** Last update timestamp */
   updatedAt: Date;
 
-  /** Additional metadata */
+  /** Additional metadata (user info, tags, etc.) */
   metadata?: Record<string, unknown>;
 }
 
@@ -64,6 +145,18 @@ export interface BudgetPool {
 }
 
 /**
+ * Node execution status
+ */
+export type NodeExecutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "waiting_for_approval"
+  | "waiting_for_review";
+
+/**
  * Node execution state within a workflow run
  */
 export interface NodeExecutionState {
@@ -71,7 +164,7 @@ export interface NodeExecutionState {
   nodeId: string;
 
   /** Execution status */
-  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  status: NodeExecutionStatus;
 
   /** Node input data */
   input?: unknown;
@@ -90,6 +183,9 @@ export interface NodeExecutionState {
 
   /** Retry count */
   retryCount?: number;
+
+  /** Pending approval request ID (if waiting for approval/review) */
+  pendingApprovalId?: string;
 
   /** Additional metadata */
   metadata?: Record<string, unknown>;
@@ -371,6 +467,55 @@ export interface StorageAdapter {
     sessionId: string,
     filter?: QueryFilter<ToolCallLog>
   ): Promise<ToolCallLog[]>;
+
+  // ==================== Approval Operations ====================
+
+  /**
+   * Create an approval request
+   */
+  createApprovalRequest(request: ApprovalRequest): Promise<void>;
+
+  /**
+   * Get an approval request by ID
+   */
+  getApprovalRequest(id: string): Promise<ApprovalRequest | null>;
+
+  /**
+   * List approval requests for a session
+   */
+  listApprovalRequests(
+    sessionId: string,
+    filter?: QueryFilter<ApprovalRequest>
+  ): Promise<ApprovalRequest[]>;
+
+  /**
+   * List pending approval requests across all sessions
+   */
+  listPendingApprovals(
+    filter?: QueryFilter<ApprovalRequest>
+  ): Promise<ApprovalRequest[]>;
+
+  /**
+   * Update approval request status (approve/reject)
+   */
+  updateApprovalRequest(
+    id: string,
+    update: Partial<ApprovalRequest>
+  ): Promise<void>;
+
+  /**
+   * Approve an approval request
+   */
+  approveRequest(
+    id: string,
+    approvedBy: string,
+    notes?: string
+  ): Promise<void>;
+
+  /**
+   * Reject an approval request
+   */
+  rejectRequest(id: string, rejectedBy: string, reason?: string): Promise<void>;
 
   // ==================== Stream Operations (Optional) ====================
 

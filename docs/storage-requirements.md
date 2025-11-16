@@ -1,189 +1,421 @@
 # Storage Requirements
 
-## 개요
+## Overview
 
-`aaow`의 스토리지 어댑터는 워크플로우 실행, 세션 관리, 예산 추적, LLM 실행 로그 등 런타임 데이터를 영구 저장하기 위한 인터페이스를 정의합니다.
+The `aaow` storage adapter provides an interface for persisting runtime data including workflow executions, session management, budget tracking, LLM execution logs, and human-in-the-loop approval requests.
 
-## 저장해야 할 데이터
+## Terminology
 
-### 1. Workflow 정의
+- **Session** = **Workflow Run**: These terms are used interchangeably. A session represents a single execution instance of a workflow.
+- **Node**: A unit of work within a workflow (LLM, Transform, Stream, etc.)
+- **Budget Pool**: Hierarchical cost control mechanism for tracking token/dollar usage
 
-워크플로우의 구조적 정의를 저장합니다.
+## Data to Store
 
-- **Workflow**: 전체 워크플로우 정의 (노드 그래프, 엣지, 타입 정의)
-- **WorkflowNode**: 개별 노드 정의 (LLM, Transform, Stream, Generator 등)
-- **WorkflowEdge**: 노드 간 연결 관계
-- **WorkflowContext**: 워크플로우 컨텍스트 데이터
+### 1. Workflow Definitions
 
-**목적**:
-- 워크플로우 재사용 및 버전 관리
-- 실행 시 워크플로우 로드
-- CallWorkflow 노드에서 외부 워크플로우 참조
+Store the structural definition of workflows.
 
-### 2. Session 정보
+**Entities:**
+- **Workflow**: Complete workflow definition (node graph, edges, type definitions)
+- **WorkflowNode**: Individual node definitions (LLM, Transform, Stream, Generator, etc.)
+- **WorkflowEdge**: Connections between nodes
+- **WorkflowContext**: Workflow context data
 
-워크플로우 실행 세션을 추적합니다.
+**Purpose:**
+- Workflow reuse and version management
+- Loading workflows at runtime
+- External workflow references from CallWorkflow nodes
 
-- **Session ID**: 고유 세션 식별자
-- **Workflow ID**: 실행 중인 워크플로우 참조
-- **Status**: 실행 상태 (running, paused, completed, failed)
-- **Created At / Updated At**: 생성 및 수정 시간
-- **Metadata**: 추가 메타데이터 (사용자 정보, 태그 등)
+**Key Fields:**
+- `id`: Unique workflow identifier
+- `name`: Human-readable workflow name
+- `version`: Semantic version string
+- `definition`: Complete workflow graph structure
+- `createdAt`, `updatedAt`: Timestamps
+- `metadata`: Additional data (tags, author, description, etc.)
 
-**목적**:
-- 여러 워크플로우 실행 추적
-- 세션별 격리 및 관리
-- 중단된 워크플로우 재개
+---
 
-### 3. Execution Context 및 상태
+### 2. Sessions (Workflow Runs)
 
-개별 워크플로우 실행의 런타임 컨텍스트를 저장합니다.
+Track workflow execution instances.
 
-- **Session ID**: 세션 참조
-- **Budget Pool ID**: 예산 풀 참조
-- **Started At**: 시작 시간
-- **Completed At**: 완료 시간
-- **Current Node ID**: 현재 실행 중인 노드
-- **Node Execution States**: 각 노드의 실행 상태 및 결과
-- **Metadata**: 실행 관련 메타데이터
+**Purpose:**
+- Track multiple concurrent workflow executions
+- Isolate execution contexts per session
+- Resume interrupted workflows
+- Monitor execution status
 
-**목적**:
-- 워크플로우 실행 재개
-- 실행 진행 상황 모니터링
-- 디버깅 및 추적
+**Key Fields:**
+- `id`: Unique session identifier (workflow run ID)
+- `workflowId`: Reference to workflow definition
+- `status`: Execution status (see below)
+- `createdAt`, `updatedAt`: Timestamps
+- `metadata`: User info, tags, execution parameters
+
+**Session Status Values:**
+- `running`: Workflow actively executing
+- `paused`: Execution temporarily paused
+- `completed`: Successfully finished
+- `failed`: Terminated with error
+- `waiting_for_human_review`: Paused for human review (WorkflowNodeLLM.requiresHumanReview)
+- `waiting_for_budget_approval`: Paused for budget increase approval
+- `waiting_for_workflow_approval`: Paused for workflow call approval (WorkflowNodeCallWorkflow.requiresApproval)
+
+---
+
+### 3. Execution Context and State
+
+Store runtime context for individual workflow executions.
+
+**Purpose:**
+- Resume workflow execution from checkpoints
+- Monitor execution progress in real-time
+- Debug and trace execution flow
+- Track node-level execution states
+
+**Key Fields:**
+- `sessionId`: Reference to session
+- `budgetPoolId`: Reference to budget pool
+- `startedAt`, `completedAt`: Execution timeline
+- `currentNodeId`: Currently executing node
+- `status`: Overall execution status
+- `nodeStates`: Map of node ID to execution state
+- `metadata`: Execution-specific data
+
+**Node Execution State:**
+- `nodeId`: Node identifier
+- `status`: Node execution status (see below)
+- `input`, `output`: Node input/output data
+- `error`: Error message if failed
+- `startedAt`, `completedAt`: Node execution timeline
+- `retryCount`: Number of retry attempts
+- `pendingApprovalId`: Reference to approval request (if waiting)
+- `metadata`: Node-specific data
+
+**Node Execution Status Values:**
+- `pending`: Not yet started
+- `running`: Currently executing
+- `completed`: Successfully finished
+- `failed`: Terminated with error
+- `skipped`: Skipped due to conditional branching
+- `waiting_for_approval`: Waiting for workflow call approval
+- `waiting_for_review`: Waiting for human review
+
+---
 
 ### 4. LLM Execution Results
 
-LLM 노드 실행 결과와 로그를 저장합니다.
+Store LLM node execution results and logs.
 
-- **Execution ID**: 실행 식별자
-- **Node ID**: LLM 노드 참조
-- **Session ID**: 세션 참조
-- **Success**: 성공 여부
-- **Text Output**: 생성된 텍스트
-- **Tool Calls**: 도구 호출 목록 및 결과
-- **Token Usage**: 토큰 사용량 (prompt, completion, total)
-- **Error**: 오류 메시지 (실패 시)
-- **Timestamp**: 실행 시간
-- **Metadata**: 추가 메타데이터
+**Purpose:**
+- Audit and log all LLM calls
+- Cost tracking and analysis
+- Debug LLM behavior
+- Support retry logic
+- Performance optimization
 
-**목적**:
-- LLM 호출 로그 및 감사
-- 비용 추적 및 분석
-- 디버깅 및 성능 최적화
-- 재시도 로직 지원
+**Key Fields:**
+- `id`: Execution identifier
+- `sessionId`: Reference to session
+- `nodeId`: Reference to LLM node
+- `timestamp`: Execution time
+- `success`: Whether execution succeeded
+- `text`: Generated text output
+- `toolCalls`: List of tool calls made
+- `usage`: Token usage statistics
+  - `promptTokens`: Input tokens
+  - `completionTokens`: Output tokens
+  - `totalTokens`: Total tokens
+- `error`: Error message if failed
+- `metadata`: Model, temperature, etc.
 
-### 5. Budget Pool 정보
+---
 
-계층적 예산 풀을 추적합니다.
+### 5. Budget Pools
 
-- **Pool ID**: 예산 풀 식별자
-- **Parent Pool ID**: 부모 풀 참조 (계층 구조)
-- **Total Budget**: 총 할당 예산 (토큰 또는 비용)
-- **Used Budget**: 사용된 예산
-- **Remaining Budget**: 남은 예산
-- **Status**: 상태 (active, exhausted, suspended)
-- **Created At**: 생성 시간
-- **Metadata**: 추가 정보
+Track hierarchical budget pools for cost control.
 
-**목적**:
-- 비용 제어 및 추적
-- 계층적 예산 관리
-- 예산 초과 방지
-- 예산 승인 워크플로우 (human-in-the-loop)
+**Purpose:**
+- Cost control and tracking
+- Hierarchical budget management (parent/child pools)
+- Prevent budget overruns
+- Human-in-the-loop budget approval workflows
+
+**Key Fields:**
+- `id`: Budget pool identifier
+- `parentPoolId`: Parent pool (for hierarchical budgets)
+- `totalBudget`: Total allocated budget (tokens or dollars)
+- `usedBudget`: Budget consumed
+- `remainingBudget`: Budget remaining
+- `status`: Pool status
+  - `active`: Normal operation
+  - `exhausted`: Budget fully consumed
+  - `suspended`: Manually suspended
+- `createdAt`: Creation timestamp
+- `metadata`: Additional information
+
+**Hierarchical Budget Flow:**
+1. Workflow executes within caller's budget pool
+2. When budget exhausted, LLM node can request budget increase via tool call
+3. Creates approval request (human-in-the-loop)
+4. Upon approval, new child budget pool created
+5. Execution continues in new pool
+
+---
 
 ### 6. Tool Call Logs
 
-도구 호출 세부 정보를 저장합니다.
+Store detailed logs of tool calls made by LLM nodes.
 
-- **Tool Call ID**: 도구 호출 식별자
-- **Execution ID**: LLM 실행 참조
-- **Tool Name**: 호출된 도구 이름
-- **Arguments**: 전달된 인수
-- **Result**: 실행 결과
-- **Error**: 오류 (실패 시)
-- **Timestamp**: 호출 시간
-- **Duration**: 실행 시간
+**Purpose:**
+- Track tool usage patterns
+- Debug tool execution
+- Performance analysis
+- Audit logging
 
-**목적**:
-- 도구 사용 추적
-- 디버깅
-- 성능 분석
-- 감사 로그
+**Key Fields:**
+- `id`: Tool call log identifier
+- `executionId`: Reference to LLM execution
+- `toolCallId`: Tool call identifier
+- `toolName`: Name of tool invoked
+- `args`: Arguments passed to tool
+- `result`: Tool execution result
+- `error`: Error if tool failed
+- `timestamp`: Call timestamp
+- `duration`: Execution duration (ms)
 
-### 7. Stream Events (선택적)
+---
 
-Stream 노드의 이벤트 로그를 저장합니다.
+### 7. Approval Requests (Human-in-the-Loop)
 
-- **Stream ID**: 스트림 식별자
-- **Node ID**: Stream 노드 참조
-- **Event Data**: 스트림 이벤트 데이터
-- **Timestamp**: 이벤트 시간
+Track approval requests for human intervention.
 
-**목적**:
-- 반응형 데이터 처리 추적
-- 디버깅
-- 이벤트 재생
+**Purpose:**
+- Human-in-the-loop workflows
+- Budget approval workflow
+- Workflow call approval
+- LLM output review
+- Audit trail of approvals
 
-## 스토리지 어댑터 요구사항
+**Key Fields:**
+- `id`: Approval request identifier
+- `sessionId`: Reference to session
+- `nodeId`: Node that triggered request
+- `type`: Approval type
+  - `human_review`: LLM output needs human review
+  - `budget_increase`: Budget increase request
+  - `workflow_call`: Workflow call needs approval
+- `status`: Approval status
+  - `pending`: Awaiting decision
+  - `approved`: Approved by user
+  - `rejected`: Rejected by user
+  - `expired`: Timed out
+- `context`: Request-specific data
+  - `description`: What needs approval
+  - `requestedBudget`: For budget requests
+  - `currentUsage`: For budget requests
+  - `workflowRef`: For workflow call approval
+  - `llmOutput`: For human review
+  - `metadata`: Additional context
+- `createdAt`: Request timestamp
+- `resolvedAt`: Approval/rejection timestamp
+- `resolvedBy`: User who approved/rejected
+- `resolutionNotes`: Approval notes or rejection reason
 
-### SQLite 기반 구현 (초기 목표)
+**Approval Flow:**
+1. Node requires approval (requiresHumanReview, requiresApproval, budget exhausted)
+2. Create ApprovalRequest with status `pending`
+3. Update Session status to appropriate `waiting_for_*` status
+4. Update NodeExecutionState status to `waiting_for_approval` or `waiting_for_review`
+5. Store `pendingApprovalId` in NodeExecutionState
+6. Wait for user action (approve/reject)
+7. Update ApprovalRequest status and resolution fields
+8. Resume workflow execution or fail gracefully
 
-SQLite는 다음과 같은 이점을 제공합니다:
+---
 
-- **간단한 설정**: 별도의 서버 불필요
-- **로컬 개발**: 빠른 로컬 개발 및 테스트
-- **트랜잭션 지원**: ACID 트랜잭션 보장
-- **성능**: 단일 사용자/서버 시나리오에 충분한 성능
+### 8. Stream Events (Optional)
 
-### 어댑터 인터페이스 요구사항
+Store stream node event logs.
 
-1. **CRUD 작업**: Create, Read, Update, Delete 지원
-2. **트랜잭션**: 원자적 작업 보장
-3. **쿼리**: 필터링 및 정렬 지원
-4. **관계**: 외래 키 및 조인 지원
-5. **마이그레이션**: 스키마 버전 관리
-6. **비동기**: 비동기 I/O 지원
+**Purpose:**
+- Track reactive data processing
+- Debug stream operations
+- Event replay for testing
+- Real-time monitoring
 
-### 확장성 고려사항
+**Key Fields:**
+- `id`: Stream event identifier
+- `streamId`: Stream identifier
+- `nodeId`: Reference to stream node
+- `data`: Event data
+- `timestamp`: Event timestamp
 
-향후 다른 스토리지 백엔드로 확장 가능하도록 설계:
+---
 
-- PostgreSQL (프로덕션 환경)
-- MongoDB (문서 지향 저장)
-- Redis (캐싱 레이어)
-- S3/Object Storage (대용량 데이터)
+## Storage Adapter Requirements
 
-## 스키마 설계 고려사항
+### SQLite Implementation (Initial Target)
 
-### 정규화
+SQLite provides the following benefits:
 
-- 중복 최소화
-- 참조 무결성 유지
-- 쿼리 성능 최적화
+- **Simple Setup**: No separate server required
+- **Local Development**: Fast local dev and testing
+- **Transaction Support**: ACID guarantees
+- **Performance**: Sufficient for single-user/server scenarios
+- **File-based**: Easy backup and portability
 
-### 인덱싱
+### Adapter Interface Requirements
 
-주요 쿼리 경로에 인덱스 추가:
-- Session ID로 실행 조회
-- Workflow ID로 정의 조회
-- Timestamp 범위 쿼리
+1. **CRUD Operations**: Create, Read, Update, Delete support
+2. **Transactions**: Atomic operation guarantees
+3. **Queries**: Filtering, sorting, pagination
+4. **Relationships**: Foreign keys and joins
+5. **Migrations**: Schema version management
+6. **Async I/O**: Non-blocking operations
 
-### JSON 필드
+### Extensibility Considerations
 
-유연한 메타데이터는 JSON 컬럼 사용:
-- ExecutionContext.metadata
-- LLMExecutionResult.metadata
-- BudgetPool.metadata
+Design for future storage backend expansion:
 
-## 데이터 보존 정책
+- **PostgreSQL** (production environments)
+- **MongoDB** (document-oriented storage)
+- **Redis** (caching layer)
+- **S3/Object Storage** (large-scale data)
 
-- **개발**: 무제한 보존
-- **프로덕션**: 설정 가능한 보존 기간
-- **자동 정리**: 오래된 로그 아카이빙/삭제
+---
 
-## 보안 고려사항
+## Schema Design Considerations
 
-- **민감 데이터**: API 키, 사용자 정보 암호화
-- **접근 제어**: 세션 격리
-- **감사 로그**: 모든 변경 사항 추적
+### Normalization
+
+- Minimize data duplication
+- Maintain referential integrity
+- Optimize query performance
+
+### Indexing
+
+Add indexes on common query paths:
+- Session ID for execution lookups
+- Workflow ID for definition lookups
+- Timestamp range queries
+- Approval status for pending approval queries
+- Budget pool hierarchy traversal
+
+### JSON Fields
+
+Use JSON columns for flexible metadata:
+- `ExecutionContext.metadata`
+- `LLMExecutionResult.metadata`
+- `BudgetPool.metadata`
+- `ApprovalRequest.context`
+
+### Foreign Key Relationships
+
+```
+Workflow (1) -> (N) Session
+Session (1) -> (1) WorkflowExecutionState
+Session (1) -> (N) NodeExecutionState
+Session (1) -> (N) LLMExecutionResult
+Session (1) -> (N) ApprovalRequest
+LLMExecutionResult (1) -> (N) ToolCallLog
+BudgetPool (1) -> (N) BudgetPool (parent-child hierarchy)
+ApprovalRequest (1) -> (1) NodeExecutionState
+```
+
+---
+
+## Data Retention Policy
+
+- **Development**: Unlimited retention
+- **Production**: Configurable retention periods
+- **Auto-cleanup**: Archive/delete old logs
+- **Critical Data**: Never auto-delete workflow definitions, approvals
+
+---
+
+## Security Considerations
+
+- **Sensitive Data**: Encrypt API keys, user credentials
+- **Access Control**: Session isolation, user-based access
+- **Audit Logging**: Track all state changes
+- **Approval Integrity**: Cryptographic signatures for approvals (future)
+
+---
+
+## Implementation Checklist
+
+### Phase 1: Core Storage (SQLite)
+- [ ] Workflow CRUD operations
+- [ ] Session management
+- [ ] Execution state tracking
+- [ ] Node execution states
+
+### Phase 2: LLM & Budget Tracking
+- [ ] LLM execution logging
+- [ ] Token usage tracking
+- [ ] Budget pool management
+- [ ] Hierarchical budget pools
+
+### Phase 3: Human-in-the-Loop
+- [ ] Approval request CRUD
+- [ ] Approval workflow
+- [ ] Session pause/resume
+- [ ] Timeout handling for approvals
+
+### Phase 4: Advanced Features
+- [ ] Tool call logging
+- [ ] Stream event storage
+- [ ] Query optimization
+- [ ] Migration system
+
+### Phase 5: Production Readiness
+- [ ] Data retention policies
+- [ ] Backup/restore
+- [ ] Performance benchmarking
+- [ ] PostgreSQL adapter
+
+---
+
+## Example Queries
+
+### Get pending approvals for a user
+```sql
+SELECT * FROM approval_requests
+WHERE status = 'pending'
+ORDER BY createdAt ASC
+```
+
+### Get session execution history
+```sql
+SELECT s.*, w.name as workflow_name
+FROM sessions s
+JOIN workflows w ON s.workflowId = w.id
+WHERE s.createdAt >= ?
+ORDER BY s.createdAt DESC
+```
+
+### Calculate budget usage by workflow
+```sql
+SELECT w.name, SUM(bp.usedBudget) as total_usage
+FROM budget_pools bp
+JOIN sessions s ON bp.id = s.budgetPoolId
+JOIN workflows w ON s.workflowId = w.id
+GROUP BY w.id, w.name
+ORDER BY total_usage DESC
+```
+
+### Get LLM execution statistics
+```sql
+SELECT
+  nodeId,
+  COUNT(*) as execution_count,
+  SUM(usage_totalTokens) as total_tokens,
+  AVG(usage_totalTokens) as avg_tokens,
+  SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count
+FROM llm_executions
+WHERE sessionId = ?
+GROUP BY nodeId
+```
