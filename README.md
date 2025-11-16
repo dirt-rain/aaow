@@ -35,6 +35,44 @@ Complex LLM workflows with provider flexibility, hierarchical budget control, an
 └─────────────────────────────────────────┘
 ```
 
+## Workflow Programming Paradigms
+
+`aaow` supports multiple programming paradigms for workflow composition, allowing you to leverage structural/procedural, object-oriented/functional, and reactive programming patterns.
+
+### Groups (Subgraphs as Nodes)
+
+- **Subgraph Nodes**: Groups encapsulate nodes and edges with dedicated `start` and `end` nodes
+- **Controlled Flow**: Arbitrary jumps (goto/jump) are restricted to maintain structure
+- **Group Restart**: Restart entire groups for loop-like behavior (similar to `while`/`loop` + `continue`)
+
+### Call Workflow
+
+Call subgroups or external workflows as reusable components:
+
+- **Budget-aware Execution**: Initially runs within the caller's budget
+- **Approval Flow**: Requests user approval for workflow calls
+- **Budget Restoration**: Upon approval, restores consumed budget and executes in a new budget group
+
+### Hierarchical Context System
+
+- **Per-Group Context**: Each group can define its own context (data or subgraph/workflow references)
+- **Context Inheritance**: Child groups can access parent (and ancestor) contexts
+- **Type-based Resolution**: Similar to React's Context API - contexts are differentiated by type
+
+### Functional and Reactive Support
+
+Workflows and subgraphs can operate in multiple modes:
+
+- **Function Mode**: Simple input → output transformation (pure functions)
+- **Stream Mode**: React to data sources or other stream nodes
+- **Coroutine Support**: Generator-based workflows that can be used as streams
+
+This design enables:
+- **Structural/Procedural**: Sequential execution with groups and controlled flow
+- **Object-Oriented**: Encapsulation via groups with context inheritance
+- **Functional**: Pure transformation workflows
+- **Reactive**: Stream-based data processing with coroutines
+
 ## Packages
 
 ### `@aaow/core`
