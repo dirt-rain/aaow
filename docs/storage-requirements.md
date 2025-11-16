@@ -14,42 +14,72 @@ The `aaow` storage adapter provides an interface for persisting runtime data inc
 
 ### 1. Workflow Definitions
 
-Store the structural definition of workflows.
+Store the structural definition of workflows as complete, self-contained JSON documents.
 
-**Entities:**
-- **Workflow**: Complete workflow definition (node graph, edges, type definitions)
-- **WorkflowNode**: Individual node definitions (LLM, Transform, Stream, Generator, etc.)
-- **WorkflowEdge**: Connections between nodes
-- **WorkflowContext**: Workflow context data
+**Storage Strategy:**
+- Workflows are stored as **complete JSON documents** containing the entire graph structure
+- The `definition` field contains a serialized `Workflow` object including all nodes, edges, groups, and context
+- **No normalization**: Nodes, edges, and context are not stored as separate entities
+- **Performance**: Single-row reads without JOINs for fast workflow loading
+- **Simplicity**: Workflow definitions are not shared between workflows, so denormalization is appropriate
 
 **Purpose:**
 - Workflow reuse and version management
 - Loading workflows at runtime
-- External workflow references from CallWorkflow nodes
+- External workflow references from CallWorkflow nodes (via `workflowId`)
 
 **Key Fields:**
 - `id`: Unique workflow identifier
 - `name`: Human-readable workflow name
 - `version`: Semantic version string
-- `definition`: Complete workflow graph structure
+- `definition`: Complete workflow graph structure (JSON serialized `Workflow` type)
+  - Contains: `root` (WorkflowNodeGroup with all nodes/edges), `typedefs`
+  - All nodes, edges, groups, and context are nested within this structure
 - `createdAt`, `updatedAt`: Timestamps
 - `metadata`: Additional data (tags, author, description, etc.)
+
+**Database Schema (SQLite):**
+```sql
+CREATE TABLE workflows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  definition TEXT NOT NULL,  -- JSON serialized Workflow
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  metadata TEXT  -- JSON
+);
+
+CREATE INDEX idx_workflows_name ON workflows(name);
+CREATE INDEX idx_workflows_version ON workflows(version);
+```
 
 ---
 
 ### 2. Sessions (Workflow Runs)
 
-Track workflow execution instances.
+Track workflow execution instances with full workflow snapshots for immutability.
+
+**Storage Strategy:**
+- Each session stores a **complete snapshot** of the workflow definition at execution time
+- This prevents execution logs from breaking when workflows are modified or deleted
+- Since workflows are typically small (< 100KB), the storage overhead is acceptable
+- Enables full reproducibility of historical executions
 
 **Purpose:**
 - Track multiple concurrent workflow executions
 - Isolate execution contexts per session
 - Resume interrupted workflows
 - Monitor execution status
+- **Preserve execution history** even when workflows change
 
 **Key Fields:**
 - `id`: Unique session identifier (workflow run ID)
-- `workflowId`: Reference to workflow definition
+- `workflowId`: Reference to workflow definition (for querying by workflow)
+- `workflowSnapshot`: **Full copy of the workflow definition at execution time**
+  - JSON serialized `Workflow` object (same structure as `workflows.definition`)
+  - Guarantees that execution logs remain valid even if workflow is modified/deleted
+  - Enables time-travel debugging and exact execution replay
 - `status`: Execution status (see below)
 - `createdAt`, `updatedAt`: Timestamps
 - `metadata`: User info, tags, execution parameters
@@ -62,6 +92,24 @@ Track workflow execution instances.
 - `waiting_for_human_review`: Paused for human review (WorkflowNodeLLM.requiresHumanReview)
 - `waiting_for_budget_approval`: Paused for budget increase approval
 - `waiting_for_workflow_approval`: Paused for workflow call approval (WorkflowNodeCallWorkflow.requiresApproval)
+
+**Database Schema (SQLite):**
+```sql
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  workflowId TEXT NOT NULL,
+  workflowSnapshot TEXT NOT NULL,  -- JSON serialized Workflow
+  status TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  metadata TEXT,  -- JSON
+  FOREIGN KEY (workflowId) REFERENCES workflows(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_sessions_workflowId ON sessions(workflowId);
+CREATE INDEX idx_sessions_status ON sessions(status);
+CREATE INDEX idx_sessions_createdAt ON sessions(createdAt);
+```
 
 ---
 
@@ -289,40 +337,63 @@ Design for future storage backend expansion:
 
 ## Schema Design Considerations
 
-### Normalization
+### Normalization Strategy
 
-- Minimize data duplication
-- Maintain referential integrity
-- Optimize query performance
+**Denormalized (JSON Documents):**
+- **Workflows**: Stored as complete JSON documents (no separate node/edge tables)
+  - Rationale: Workflows are not composed from shared components
+  - Performance: Single-row reads, no JOINs required
+  - Size: Typically small (< 100KB per workflow)
+- **Workflow Snapshots**: Full copies in each Session
+  - Rationale: Ensures immutability of execution logs
+  - Trade-off: Storage overhead for historical integrity
+
+**Normalized (Relational):**
+- **Sessions**: One row per workflow run
+- **LLM Executions**: Separate rows for query/analysis
+- **Tool Calls**: Separate rows for detailed logging
+- **Approval Requests**: Separate rows for human-in-the-loop tracking
+- **Budget Pools**: Separate rows with parent-child relationships
+
+**Hybrid Approach Benefits:**
+- Fast workflow loading (denormalized)
+- Efficient log querying (normalized)
+- Immutable execution history (snapshots)
 
 ### Indexing
 
 Add indexes on common query paths:
-- Session ID for execution lookups
-- Workflow ID for definition lookups
-- Timestamp range queries
-- Approval status for pending approval queries
-- Budget pool hierarchy traversal
+- **Sessions**: `workflowId`, `status`, `createdAt`
+- **Workflows**: `name`, `version`
+- **LLM Executions**: `sessionId`, `nodeId`, `timestamp`
+- **Tool Calls**: `executionId`, `toolName`
+- **Approval Requests**: `sessionId`, `status`, `type`
+- **Budget Pools**: `parentPoolId`, `status`
 
 ### JSON Fields
 
-Use JSON columns for flexible metadata:
-- `ExecutionContext.metadata`
-- `LLMExecutionResult.metadata`
-- `BudgetPool.metadata`
-- `ApprovalRequest.context`
+Use JSON columns for flexible data:
+- **Workflow definitions**: `workflows.definition`, `sessions.workflowSnapshot`
+- **Metadata fields**: All `metadata` columns
+- **Approval context**: `approval_requests.context`
+- **Node states**: `node_execution_states.input/output` (if storing separately)
 
 ### Foreign Key Relationships
 
+**Note**: Workflow definitions are embedded as JSON, not normalized.
+
 ```
-Workflow (1) -> (N) Session
+Workflow (1) -> (N) Session (via workflowId reference only)
+  - Session contains workflowSnapshot (full JSON copy)
+  - Workflow can be deleted without breaking sessions
+
 Session (1) -> (1) WorkflowExecutionState
 Session (1) -> (N) NodeExecutionState
 Session (1) -> (N) LLMExecutionResult
 Session (1) -> (N) ApprovalRequest
 LLMExecutionResult (1) -> (N) ToolCallLog
 BudgetPool (1) -> (N) BudgetPool (parent-child hierarchy)
-ApprovalRequest (1) -> (1) NodeExecutionState
+ApprovalRequest (1) <-> (1) NodeExecutionState (optional link)
 ```
 
 ---

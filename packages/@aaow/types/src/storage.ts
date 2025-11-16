@@ -94,6 +94,9 @@ export interface ApprovalRequest {
  *
  * Represents a single execution instance of a workflow.
  * "Session" and "Workflow Run" are used interchangeably.
+ *
+ * Note: The workflow definition is snapshotted at execution time to ensure
+ * that modifications to the workflow don't break historical execution logs.
  */
 export interface Session {
   /** Unique session identifier (also the workflow run ID) */
@@ -101,6 +104,15 @@ export interface Session {
 
   /** Reference to workflow definition being executed */
   workflowId: string;
+
+  /**
+   * Snapshot of the workflow definition at execution time
+   *
+   * This is a full copy of the Workflow (including all nodes, edges, context)
+   * serialized as JSON. This ensures that even if the workflow is modified
+   * or deleted, the execution log remains complete and reproducible.
+   */
+  workflowSnapshot: Workflow;
 
   /** Current execution status */
   status: SessionStatus;
